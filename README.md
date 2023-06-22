@@ -1,7 +1,7 @@
 # OpenContestLogger
 
 ## Description
-OpenContestLogger is intended to provide a free and easy way for clubs running any number of transmitters.
+OpenContestLogger is intended to provide a free and easy way for clubs running any number of transmitters to log contacts for contests such as Field Day.
 
 ## Goals
 Provide software that is always free to use, easy to set up, safe, and robust
