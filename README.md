@@ -19,6 +19,7 @@ laptop in a field with no internet and nothing else to install or configure.
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Running the server](#running-the-server)
+- [Passwords](#passwords-optional-recommended-for-public-sites)
 - [Connecting operator stations](#connecting-operator-stations)
 - [Quick start](#quick-start)
 - [Using the logger](#using-the-logger)
@@ -53,6 +54,9 @@ laptop in a field with no internet and nothing else to install or configure.
 - **Field Day scoring** — QSO points (CW/digital = 2, phone = 1) × power
   multiplier + manual bonus points = claimed score, updated live.
 - **Full log view** — search, edit, and delete contacts.
+- **Optional password protection** — an access password to use the logger and a
+  separate admin/override password for editing past contacts and changing setup,
+  for stations shared with several clubs or the public.
 - **One-click exports** — **Cabrillo** (`.cbr`) for ARRL submission and
   **ADIF** (`.adi`) for LoTW / other logbooks.
 - **Section & class validation** — all 84 ARRL/RAC sections plus DX; classes
@@ -279,6 +283,11 @@ and station. You can:
 
 Edits and deletes broadcast live to all stations and update the score.
 
+> If an admin password is configured (see [Passwords](#passwords-optional-recommended-for-public-sites)),
+> editing and deleting require unlocking with the override password first —
+> click **🔒 admin** in the top bar, or just attempt the change and you'll be
+> prompted. Logging new contacts never needs it.
+
 ### 6. Scoring
 
 Field Day QSO points:
@@ -451,8 +460,11 @@ correction propagates to all stations and the score.
 - Dupe checking is informational — it never blocks logging a contact.
 - Bonus points are entered manually on the Setup page; the logger does not
   detect which bonuses you qualify for.
-- There is **no authentication**. Run it on a trusted local network, as you
-  would at a Field Day site — not on the public internet.
+- Authentication is **optional and off by default** (see
+  [Passwords](#passwords-optional-recommended-for-public-sites)). Even with
+  passwords set, traffic is plain HTTP over the LAN — the passwords keep casual
+  and public users out, but are not a defense against someone sniffing the local
+  network. Run it on a trusted local network, not on the public internet.
 - The built-in Flask server is fine for a Field Day's worth of stations. It is
   not hardened for public deployment.
 
