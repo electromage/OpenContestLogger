@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — Field Day Logger</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+  <main class="login-wrap">
+    <form class="panel login-panel" method="post" action="{{ url_for('login') }}">
+      <div class="brand" style="font-size:1.4rem;margin-bottom:.2rem">FIELD<span class="dot">·</span>DAY <span style="color:var(--muted);font-weight:400;font-size:.8rem">logger</span></div>
+      <p class="help">Enter the station password to access the log.</p>
+
+      {% if error %}<div class="callout dupe">✕ {{ error }}</div>{% endif %}
+
+      <input type="hidden" name="next" value="{{ next or '' }}">
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" autocomplete="current-password" autofocus required>
+      </div>
+      <div class="save-bar">
+        <button type="submit">Sign in</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

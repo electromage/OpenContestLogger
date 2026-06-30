@@ -9,9 +9,48 @@ const FieldDay = (() => {
   const api = async (url, opts) => {
     const r = await fetch(url, opts);
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || r.statusText);
+    if (!r.ok) {
+      // Session expired or never authenticated — send the user back to login.
+      if (r.status === 401 && body.auth_required) {
+        window.location = "/login?next=" + encodeURIComponent(location.pathname);
+      }
+      const err = new Error(body.error || r.statusText);
+      err.status = r.status;
+      err.adminRequired = !!body.admin_required;
+      throw err;
+    }
     return body;
   };
+
+  // Prompt for the admin/override password and unlock this session.
+  async function unlockAdmin() {
+    const pw = prompt("Admin / override password (required to change past contacts or settings):");
+    if (pw === null) return false;
+    try {
+      await api("/api/admin/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      return true;
+    } catch (e) {
+      alert("Incorrect admin password.");
+      return false;
+    }
+  }
+
+  // Run an admin-gated request; on a 403 prompt for the override password and
+  // retry once so the operator doesn't lose what they were doing.
+  async function apiAdmin(url, opts) {
+    try {
+      return await api(url, opts);
+    } catch (e) {
+      if (e.adminRequired && (await unlockAdmin())) {
+        return await api(url, opts);
+      }
+      throw e;
+    }
+  }
   const esc = (s) =>
     (s ?? "").toString().replace(/[&<>"]/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -149,7 +188,7 @@ const FieldDay = (() => {
       const del = e.target.closest("[data-del]");
       if (!del) return;
       if (confirm("Delete this contact?")) {
-        try { await api("/api/contacts/" + del.dataset.del, { method: "DELETE" }); }
+        try { await apiAdmin("/api/contacts/" + del.dataset.del, { method: "DELETE" }); }
         catch (err) { setCallout("dupe", "✕ " + esc(err.message)); }
       }
     });
@@ -280,8 +319,10 @@ const FieldDay = (() => {
       const del = e.target.closest("[data-del]");
       if (del) {
         if (confirm("Delete this contact?")) {
-          await api("/api/contacts/" + del.dataset.del, { method: "DELETE" });
-          reload();
+          try {
+            await apiAdmin("/api/contacts/" + del.dataset.del, { method: "DELETE" });
+            reload();
+          } catch (err) { alert(err.message); }
         }
         return;
       }
@@ -303,7 +344,7 @@ const FieldDay = (() => {
         rst_sent: $("e-rsts").value, rst_rcvd: $("e-rstr").value, operator: $("e-op").value,
       };
       try {
-        await api("/api/contacts/" + $("e-id").value, {
+        await apiAdmin("/api/contacts/" + $("e-id").value, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -340,11 +381,16 @@ const FieldDay = (() => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = Object.fromEntries(new FormData(form).entries());
-      await api("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
+      try {
+        await apiAdmin("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
       const msg = $("savedMsg");
       msg.classList.add("show");
       setTimeout(() => msg.classList.remove("show"), 1800);

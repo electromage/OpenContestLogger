@@ -10,6 +10,7 @@ Design goals:
     operator sees new QSOs as they happen.
   * One-click export to a Cabrillo file that the ARRL robot will accept.
 """
+import os
 import json
 import queue
 import datetime
@@ -18,16 +19,96 @@ from flask import (
     Response,
     request,
     jsonify,
+    session,
+    redirect,
+    url_for,
     render_template,
     stream_with_context,
 )
 
 import db
+import auth
 import fieldday
 import exporter
 
 app = Flask(__name__)
 db.init()
+
+# Sign session cookies with a stable, persisted key so operators stay logged in
+# across server restarts during the event.
+app.secret_key = auth.secret_key(os.path.dirname(db.DB_PATH))
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(hours=36),
+)
+
+
+@app.context_processor
+def inject_auth():
+    """Make auth state available to every template."""
+    return {
+        "auth_enabled": auth.AUTH_ENABLED,
+        "is_admin": auth.admin_ok(),
+    }
+
+
+# --------------------------------------------------------------------------
+# Login / logout / admin unlock
+# --------------------------------------------------------------------------
+def _safe_next(target):
+    """Only allow redirects to local paths (avoid open-redirect)."""
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("index")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not auth.AUTH_ENABLED:
+        return redirect(url_for("index"))
+    nxt = request.values.get("next", "")
+    if request.method == "POST":
+        if auth.check_access(request.form.get("password", "")):
+            session.permanent = True
+            session["authed"] = True
+            # An access login never implies admin; that must be unlocked
+            # separately with the override password.
+            session.pop("admin", None)
+            return redirect(_safe_next(nxt))
+        return render_template("login.html", error="Incorrect password.", next=nxt), 401
+    if auth.auth_ok():
+        return redirect(_safe_next(nxt))
+    return render_template("login.html", error=None, next=nxt)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/api/admin/unlock", methods=["POST"])
+@auth.require_auth
+def admin_unlock():
+    data = request.get_json(force=True, silent=True) or {}
+    if auth.check_admin(data.get("password", "")):
+        session["admin"] = True
+        return jsonify({"admin": True})
+    return jsonify({"error": "Incorrect admin password.", "admin": False}), 403
+
+
+@app.route("/api/admin/lock", methods=["POST"])
+@auth.require_auth
+def admin_lock():
+    session.pop("admin", None)
+    return jsonify({"admin": False})
+
+
+@app.route("/api/admin/status")
+@auth.require_auth
+def admin_status():
+    return jsonify({"admin": auth.admin_ok()})
 
 # --------------------------------------------------------------------------
 # Live updates (Server-Sent Events)
@@ -51,6 +132,7 @@ def broadcast(event, payload):
 
 
 @app.route("/stream")
+@auth.require_auth
 def stream():
     def gen():
         q = queue.Queue(maxsize=100)
@@ -80,11 +162,13 @@ def stream():
 # Pages
 # --------------------------------------------------------------------------
 @app.route("/")
+@auth.require_auth
 def index():
     return render_template("index.html", config=db.get_config())
 
 
 @app.route("/setup")
+@auth.require_auth
 def setup_page():
     return render_template(
         "setup.html",
@@ -96,6 +180,7 @@ def setup_page():
 
 
 @app.route("/log")
+@auth.require_auth
 def log_page():
     return render_template("log.html", config=db.get_config())
 
@@ -104,6 +189,7 @@ def log_page():
 # Reference data for the front-end
 # --------------------------------------------------------------------------
 @app.route("/api/meta")
+@auth.require_auth
 def api_meta():
     return jsonify(
         {
@@ -120,8 +206,12 @@ def api_meta():
 # Config
 # --------------------------------------------------------------------------
 @app.route("/api/config", methods=["GET", "POST"])
+@auth.require_auth
 def api_config():
     if request.method == "POST":
+        # Changing settings is an admin-only action.
+        if not auth.admin_ok():
+            return auth.admin_required_response()
         data = request.get_json(force=True)
         allowed = set(db.DEFAULT_CONFIG.keys())
         db.update_config({k: v for k, v in data.items() if k in allowed})
@@ -133,6 +223,7 @@ def api_config():
 # Dupe check (called as the operator types a callsign)
 # --------------------------------------------------------------------------
 @app.route("/api/check")
+@auth.require_auth
 def api_check():
     call = fieldday.normalize_call(request.args.get("call", ""))
     band = request.args.get("band", "")
@@ -216,6 +307,7 @@ def _validate_and_build(data, require_time=True):
 
 
 @app.route("/api/contacts", methods=["GET", "POST"])
+@auth.require_auth
 def api_contacts():
     if request.method == "POST":
         data = request.get_json(force=True)
@@ -235,6 +327,7 @@ def api_contacts():
 
 
 @app.route("/api/contacts/<int:contact_id>", methods=["PUT", "DELETE"])
+@auth.require_admin
 def api_contact(contact_id):
     if request.method == "DELETE":
         db.delete_contact(contact_id)
@@ -281,6 +374,7 @@ def _score_payload():
 
 
 @app.route("/api/score")
+@auth.require_auth
 def api_score():
     return jsonify(_score_payload())
 
@@ -295,6 +389,7 @@ def _chronological():
 
 
 @app.route("/export/cabrillo")
+@auth.require_auth
 def export_cabrillo():
     cfg = db.get_config()
     text = exporter.to_cabrillo(cfg, _chronological())
@@ -307,6 +402,7 @@ def export_cabrillo():
 
 
 @app.route("/export/adif")
+@auth.require_auth
 def export_adif():
     cfg = db.get_config()
     text = exporter.to_adif(cfg, _chronological())
@@ -319,8 +415,7 @@ def export_adif():
 
 
 if __name__ == "__main__":
-    import os
-
     port = int(os.environ.get("PORT", "8073"))
-    print(f"\n  Field Day Logger running.  Open http://<this-machine-ip>:{port}/\n")
+    print(f"\n  Field Day Logger running.  Open http://<this-machine-ip>:{port}/")
+    print(auth.startup_banner() + "\n")
     app.run(host="0.0.0.0", port=port, threaded=True)

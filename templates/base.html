@@ -19,6 +19,16 @@
     <span class="station-id">
       {{ config.my_call or 'NOCALL' }} &nbsp;<b>{{ config.my_class or '?' }}</b> {{ config.my_section or '??' }}
     </span>
+    {% if auth_enabled %}
+    <button id="adminToggle" class="admin-pill {{ 'unlocked' if is_admin else 'locked' }}"
+            data-admin="{{ '1' if is_admin else '0' }}"
+            title="{{ 'Admin unlocked — click to lock' if is_admin else 'Admin locked — click to unlock editing & settings' }}">
+      {{ '🔓 admin' if is_admin else '🔒 admin' }}
+    </button>
+    <form method="post" action="{{ url_for('logout') }}" style="display:inline">
+      <button class="secondary logout-btn" type="submit" title="Sign out">Sign out</button>
+    </form>
+    {% endif %}
   </header>
 
   {% block scorestrip %}{% endblock %}
@@ -30,6 +40,31 @@
   <script>
     window.CONFIG = {{ config | tojson }};
   </script>
+  {% if auth_enabled %}
+  <script>
+    // Admin lock/unlock toggle in the top bar.
+    (function () {
+      var btn = document.getElementById("adminToggle");
+      if (!btn) return;
+      btn.addEventListener("click", async function () {
+        if (btn.dataset.admin === "1") {
+          await fetch("/api/admin/lock", { method: "POST" });
+          location.reload();
+          return;
+        }
+        var pw = prompt("Admin / override password (required to edit past contacts and settings):");
+        if (pw === null) return;
+        var r = await fetch("/api/admin/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: pw }),
+        });
+        if (r.ok) location.reload();
+        else alert("Incorrect admin password.");
+      });
+    })();
+  </script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

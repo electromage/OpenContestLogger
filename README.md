@@ -135,6 +135,41 @@ Leave this process running for the duration of Field Day. Stop it with
 
 ---
 
+## Passwords (optional, recommended for public sites)
+
+If your station is open to several clubs or the general public, you can require
+a password to use the logger, plus a second "override" password for sensitive
+actions. Both are set with environment variables — they are never stored in the
+database or in an exported log.
+
+| Variable | Protects | Give it to |
+|----------|----------|------------|
+| `FD_PASSWORD` | Opening the logger at all (a login screen appears) | Everyone allowed to operate or watch the log |
+| `FD_ADMIN_PASSWORD` | **Editing or deleting past contacts, and changing Setup** | The event coordinator only |
+
+```bash
+FD_PASSWORD="club2026" FD_ADMIN_PASSWORD="coordinator-only" ./run.sh
+```
+
+You can also uncomment the `export` lines near the top of `run.sh` instead.
+
+Behaviour:
+
+- **Logging new contacts only needs the access password**, so operators aren't
+  slowed down — the admin password is only for changing the *past* (edits,
+  deletes) and the configuration.
+- To make a change, click the **🔒 admin** button in the top bar and enter the
+  override password; you can also just attempt the edit and you'll be prompted.
+  Click **🔓 admin** to lock it again. **Sign out** clears your session.
+- If `FD_ADMIN_PASSWORD` is omitted, it falls back to `FD_PASSWORD` (one password
+  gates everything). If `FD_PASSWORD` is omitted entirely, the logger runs **open
+  with no password**, exactly as before, and prints a warning at startup.
+- Logins are signed with a key stored in `data/secret.key` (auto-generated, kept
+  out of git) so operators stay logged in across a server restart. Delete that
+  file to force everyone to log in again.
+
+---
+
 ## Connecting operator stations
 
 The logger is meant to be run on **one "server" laptop** that every operating
@@ -370,6 +405,8 @@ Environment variables:
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PORT` | `8073` | TCP port the server listens on |
+| `FD_PASSWORD` | _(unset → no auth)_ | Access password required to use the logger |
+| `FD_ADMIN_PASSWORD` | _(falls back to `FD_PASSWORD`)_ | Override password for editing past contacts and changing setup |
 
 ---
 
@@ -378,10 +415,11 @@ Environment variables:
 | Path | Purpose |
 |------|---------|
 | `app.py` | Flask routes, live SSE broadcast, request validation |
+| `auth.py` | Optional access + admin password protection (env-var configured) |
 | `db.py` | SQLite schema, queries, and default config |
 | `fieldday.py` | Bands, modes, ARRL/RAC sections, classes, scoring rules |
 | `exporter.py` | Cabrillo 3.0 and ADIF generators |
-| `templates/` | `index.html` (logging), `log.html` (full log), `setup.html`, `base.html` |
+| `templates/` | `index.html` (logging), `log.html` (full log), `setup.html`, `login.html`, `base.html` |
 | `static/` | `app.js` (front-end logic), `style.css` |
 | `data/` | SQLite database (created at runtime, gitignored) |
 | `run.sh` | Convenience launcher that prints the LAN URL |
